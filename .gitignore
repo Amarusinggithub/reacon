@@ -61,7 +61,7 @@ frontend/yjs-wss-db/*
 !frontend/yjs-wss-db/some-file-you-want-to-keep
 .idea
 
-
+example-app/**
 cypress.env.json
 *.local
 .env

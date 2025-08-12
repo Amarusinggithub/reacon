@@ -1,0 +1,103 @@
+
+services:
+
+  db_prod:
+    networks:
+      - reacon-net-prod
+    image: postgres:latest
+    container_name: reacon-db-prod
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      timeout: 10s
+      retries: 10
+    restart: always
+    user: postgres
+    secrets:
+      - db-password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=example
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db-password
+    expose:
+      - 5432
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env.development
+
+  api_prod:
+    networks:
+      - reacon-net-prod
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      target: production
+    command: sh ./entrypoint.prod.sh
+    container_name: reacon-api-prod
+    restart: always
+    volumes:
+      - ./api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db_prod:
+        condition: service_healthy
+      redis_prod:
+        condition: service_healthy
+    env_file:
+      - .env.production
+
+  redis_prod:
+    networks:
+      - reacon-net-prod
+    image: redis:8.0.1-alpine
+    container_name: reacon-redis-cache-prod
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: always
+    depends_on:
+      db_prod:
+        condition: service_healthy
+    volumes:
+      - "redis-data-prod:/data"
+    ports:
+      - "6379:6379"
+    env_file:
+      - .env.production
+
+
+
+  client_prod:
+    networks:
+      - reacon-net-prod
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: production
+      args:
+      - VITE_BASE_URL= http://localhost:80/api/
+      - VITE_WS_ORIGIN= ws://localhost:80
+      - VITE_APP_NAME= Reacon
+      - VITE_client_URL= http://localhost:80/
+    container_name: reacon-client-prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      api_prod:
+          condition: service_started
+    env_file:
+      - .env.production
+
+      
+networks:
+  reacon-net-prod:
+    driver: bridge
+
+volumes:
+  db-data-prod: {}
+  redis-data-prod: {}
+

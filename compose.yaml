@@ -1,0 +1,116 @@
+services:
+  db:
+    networks:
+      - reacon-net
+    image: postgres:latest
+    container_name: reacon-db
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: always
+    user: postgres
+    secrets:
+      - db-password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=example
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db-password
+    expose:
+      - 5432
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env.development
+
+  redis:
+    networks:
+      - reacon-net
+    image: redis:8.0.1-alpine
+    container_name: reacon-redis-cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - "redis-data:/data"
+    expose:
+      - 6379
+    ports:
+      - "6379:6379"
+    env_file:
+      - .env.development
+
+  api:
+    networks:
+      - reacon-net
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      target: development
+    command: sh ./entrypoint.dev.sh
+    container_name: reacon-api
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.development
+
+  client:
+    networks:
+      - reacon-net
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: development
+      args:
+      - VITE_BASE_URL= http://0.0.0.0:8000/api/
+      - VITE_WS_ORIGIN= ws://0.0.0.0:8000
+      - VITE_APP_NAME= Reacon
+      - VITE_CLIENT_URL= http://0.0.0.0:5173/
+    container_name: reacon-client
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ./client:/usr/src/app
+      - node_modules_client:/usr/src/app/node_modules
+    stdin_open: true
+    tty: true
+    command: ["sh", "entrypoint.sh"]
+    environment:
+      VITE_BASE_URL: ${VITE_BASE_URL}
+      VITE_WS_ORIGIN: ${VITE_WS_ORIGIN}
+      VITE_APP_NAME: ${VITE_APP_NAME}
+      VITE_CLIENT_URL: ${VITE_CLIENT_URL}
+    env_file:
+      - .env.development
+
+networks:
+  reacon-net:
+    driver: bridge
+
+volumes:
+  redis-data: {}
+  db-data: {}
+  node_modules_client: {}
+
+
+# secrets:
+#   db-password:
+#     file: db/password.txt
